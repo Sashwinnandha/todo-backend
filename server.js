@@ -41,10 +41,12 @@ connectToMongoDB()
   .then(() => {
     // Routes should be defined after MongoDB connection is established
     // GET all tasks
-    app.get('/tasks', async (req, res) => {
+    app.post('/tasks', async (req, res) => {
       try {
+        const {date}=req.body
         const tasks = await tasksCollection.find().toArray();
-        res.json(tasks);
+        const newTasks=tasks.filter((e)=>e.date===date)
+        res.json(newTasks);
       } catch (err) {
         console.error('Error retrieving tasks:', err);
         res.status(500).json({ error: 'Failed to retrieve tasks' });
@@ -52,7 +54,7 @@ connectToMongoDB()
     });
 
     // POST new task
-    app.post('/tasks', async (req, res) => {
+    app.post('/newtask', async (req, res) => {
       try {
         const newTask = req.body;
         const result = await tasksCollection.insertOne(newTask);
