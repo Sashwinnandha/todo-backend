@@ -1,90 +1,71 @@
 const express = require('express');
-const fs = require('fs');
+const { MongoClient } = require('mongodb');
 const cors = require('cors');
-const app = express();
-const PORT = 5000;
+require('dotenv').config();
 
-const DATA_FILE = './tasks.json';
+const app = express();
+const PORT = process.env.PORT || 5000;
+const MONGO_URI = process.env.MONGO_URI;
 
 app.use(cors());
 app.use(express.json());
 
-// Read tasks from JSON file
-function readTasks() {
-  if (!fs.existsSync(DATA_FILE)) return [];
-  const data = fs.readFileSync(DATA_FILE, 'utf8');
-  return JSON.parse(data || '[]');
-}
+let tasksCollection;
 
-function updateTasks(index,status) {
-  if (!fs.existsSync(DATA_FILE)) return [];
-
-  const rawData = fs.readFileSync(DATA_FILE, 'utf8');
-  const tasks = JSON.parse(rawData);
-
-   if (index < 0 || index >= tasks.length) {
-    console.error('Invalid task index');
-    return;
-  }
-
-  // Toggle the completed flag
-  tasks[index].completed = status;
-
-  // Save updated tasks
-  fs.writeFileSync(DATA_FILE, JSON.stringify(tasks, null, 2));
-  return tasks[index]; // or return as needed
-}
-
-function deleteTasks(index,status) {
-  if (!fs.existsSync(DATA_FILE)) return [];
-
-  const rawData = fs.readFileSync(DATA_FILE, 'utf8');
-  const tasks = JSON.parse(rawData);
-
-   if (index < 0 || index >= tasks.length) {
-    console.error('Invalid task index');
-    return "Invalid task index";
-  }
-
-  // Toggle the completed flag
-  const newTasks=Object.values(tasks).filter((each,eachIndex)=>eachIndex!==index)
-
-  // Save updated tasks
-  fs.writeFileSync(DATA_FILE, JSON.stringify(newTasks, null, 2));
-  return "Deleted Successfully"; // or return as needed
-}
-// Write tasks to JSON file
-function writeTasks(tasks) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(tasks, null, 2));
-}
+// Connect to MongoDB
+MongoClient.connect(MONGO_URI, { useUnifiedTopology: true })
+  .then(client => {
+    const db = client.db('todoApp');
+    tasksCollection = db.collection('tasks');
+    console.log('Connected to MongoDB');
+  })
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // GET all tasks
-app.get('/tasks', (req, res) => {
-  const tasks = readTasks();
+app.get('/tasks', async (req, res) => {
+  const tasks = await tasksCollection.find().toArray();
   res.json(tasks);
 });
 
 // POST new task
-app.post('/tasks', (req, res) => {
-  const tasks = readTasks();
+app.post('/tasks', async (req, res) => {
   const newTask = req.body;
-  tasks.push(newTask);
-  writeTasks(tasks);
-  res.status(201).json(newTask);
+  const result = await tasksCollection.insertOne(newTask);
+  res.status(201).json({ ...newTask, _id: result.insertedId });
 });
 
-app.post('/task', (req, res) => {
-  const tasks = readTasks();
-  const {index,status} = req.body;
-  updateTasks(index,status)
-  res.status(201).json(tasks[index]);
-})
+// POST update task status
+app.post('/task', async (req, res) => {
+  const { index, status } = req.body;
+  const tasks = await tasksCollection.find().toArray();
 
-app.post('/taskid',(req,res)=>{
-  const {index} = req.body;
-  const msg=deleteTasks(index)
-  res.status(201).json(msg);
-})
+  if (index < 0 || index >= tasks.length) {
+    return res.status(400).json({ error: 'Invalid index' });
+  }
+
+  const task = tasks[index];
+  await tasksCollection.updateOne(
+    { _id: task._id },
+    { $set: { completed: status } }
+  );
+
+  res.status(201).json({ ...task, completed: status });
+});
+
+// POST delete task by index
+app.post('/taskid', async (req, res) => {
+  const { index } = req.body;
+  const tasks = await tasksCollection.find().toArray();
+
+  if (index < 0 || index >= tasks.length) {
+    return res.status(400).json('Invalid task index');
+  }
+
+  const taskToDelete = tasks[index];
+  await tasksCollection.deleteOne({ _id: taskToDelete._id });
+
+  res.status(201).json('Deleted Successfully');
+});
 
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
