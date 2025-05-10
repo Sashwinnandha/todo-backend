@@ -12,61 +12,106 @@ app.use(express.json());
 
 let tasksCollection;
 
-// Connect to MongoDB
-MongoClient.connect(MONGO_URI, { useUnifiedTopology: true })
-  .then(client => {
-    const db = client.db('todoApp');
-    tasksCollection = db.collection('tasks');
-    console.log('Connected to MongoDB');
+// Retry logic for MongoDB connection
+async function connectToMongoDB() {
+  const maxRetries = 5;
+  let attempt = 0;
+
+  while (attempt < maxRetries) {
+    try {
+      const client = new MongoClient(MONGO_URI);
+      await client.connect();
+      console.log('✅ MongoDB connected!');
+      tasksCollection = client.db('todoApp').collection('tasks');
+      break;  // Exit loop once connected
+    } catch (err) {
+      attempt++;
+      console.warn(`⚠️ MongoDB connect attempt ${attempt} failed: ${err.message}`);
+      if (attempt >= maxRetries) {
+        throw new Error('❌ Failed to connect to MongoDB after retries');
+      }
+      // Wait for a short period before retrying (e.g. 2 seconds)
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+}
+
+// Connect to MongoDB and then start the server
+connectToMongoDB()
+  .then(() => {
+    // Routes should be defined after MongoDB connection is established
+    // GET all tasks
+    app.get('/tasks', async (req, res) => {
+      try {
+        const tasks = await tasksCollection.find().toArray();
+        res.json(tasks);
+      } catch (err) {
+        console.error('Error retrieving tasks:', err);
+        res.status(500).json({ error: 'Failed to retrieve tasks' });
+      }
+    });
+
+    // POST new task
+    app.post('/tasks', async (req, res) => {
+      try {
+        const newTask = req.body;
+        const result = await tasksCollection.insertOne(newTask);
+        res.status(201).json({ ...newTask, _id: result.insertedId });
+      } catch (err) {
+        console.error('Error inserting task:', err);
+        res.status(500).json({ error: 'Failed to insert task' });
+      }
+    });
+
+    // POST update task status
+    app.post('/task', async (req, res) => {
+      try {
+        const { index, status } = req.body;
+        const tasks = await tasksCollection.find().toArray();
+
+        if (index < 0 || index >= tasks.length) {
+          return res.status(400).json({ error: 'Invalid index' });
+        }
+
+        const task = tasks[index];
+        await tasksCollection.updateOne(
+          { _id: task._id },
+          { $set: { completed: status } }
+        );
+
+        res.status(201).json({ ...task, completed: status });
+      } catch (err) {
+        console.error('Error updating task status:', err);
+        res.status(500).json({ error: 'Failed to update task status' });
+      }
+    });
+
+    // POST delete task by index
+    app.post('/taskid', async (req, res) => {
+      try {
+        const { index } = req.body;
+        const tasks = await tasksCollection.find().toArray();
+
+        if (index < 0 || index >= tasks.length) {
+          return res.status(400).json('Invalid task index');
+        }
+
+        const taskToDelete = tasks[index];
+        await tasksCollection.deleteOne({ _id: taskToDelete._id });
+
+        res.status(201).json('Deleted Successfully');
+      } catch (err) {
+        console.error('Error deleting task:', err);
+        res.status(500).json({ error: 'Failed to delete task' });
+      }
+    });
+
+    // Start the server only after MongoDB is connected
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running at http://localhost:${PORT}`);
+    });
+
   })
-  .catch(err => console.error('MongoDB connection error:', err));
-
-// GET all tasks
-app.get('/tasks', async (req, res) => {
-  const tasks = await tasksCollection.find().toArray();
-  res.json(tasks);
-});
-
-// POST new task
-app.post('/tasks', async (req, res) => {
-  const newTask = req.body;
-  const result = await tasksCollection.insertOne(newTask);
-  res.status(201).json({ ...newTask, _id: result.insertedId });
-});
-
-// POST update task status
-app.post('/task', async (req, res) => {
-  const { index, status } = req.body;
-  const tasks = await tasksCollection.find().toArray();
-
-  if (index < 0 || index >= tasks.length) {
-    return res.status(400).json({ error: 'Invalid index' });
-  }
-
-  const task = tasks[index];
-  await tasksCollection.updateOne(
-    { _id: task._id },
-    { $set: { completed: status } }
-  );
-
-  res.status(201).json({ ...task, completed: status });
-});
-
-// POST delete task by index
-app.post('/taskid', async (req, res) => {
-  const { index } = req.body;
-  const tasks = await tasksCollection.find().toArray();
-
-  if (index < 0 || index >= tasks.length) {
-    return res.status(400).json('Invalid task index');
-  }
-
-  const taskToDelete = tasks[index];
-  await tasksCollection.deleteOne({ _id: taskToDelete._id });
-
-  res.status(201).json('Deleted Successfully');
-});
-
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-});
+  .catch((err) => {
+    console.error('🛑 Could not start server:', err.message);
+  });
