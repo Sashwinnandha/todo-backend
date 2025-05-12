@@ -1,5 +1,5 @@
 const express = require('express');
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 const cors = require('cors');
 require('dotenv').config();
 
@@ -68,20 +68,15 @@ connectToMongoDB()
     // POST update task status
     app.post('/task', async (req, res) => {
       try {
-        const { index, status } = req.body;
+        const { _id, status } = req.body;
         const tasks = await tasksCollection.find().toArray();
 
-        if (index < 0 || index >= tasks.length) {
-          return res.status(400).json({ error: 'Invalid index' });
-        }
-
-        const task = tasks[index];
         await tasksCollection.updateOne(
-          { _id: task._id },
+          { _id: new ObjectId(_id)},
           { $set: { completed: status } }
         );
 
-        res.status(201).json({ ...task, completed: status });
+        res.status(201).json({_id, completed: status });
       } catch (err) {
         console.error('Error updating task status:', err);
         res.status(500).json({ error: 'Failed to update task status' });
@@ -91,15 +86,9 @@ connectToMongoDB()
     // POST delete task by index
     app.post('/taskid', async (req, res) => {
       try {
-        const { index } = req.body;
-        const tasks = await tasksCollection.find().toArray();
+        const { _id } = req.body;
 
-        if (index < 0 || index >= tasks.length) {
-          return res.status(400).json('Invalid task index');
-        }
-
-        const taskToDelete = tasks[index];
-        await tasksCollection.deleteOne({ _id: taskToDelete._id });
+        await tasksCollection.deleteOne({ _id: new ObjectId(_id) });
 
         res.status(201).json('Deleted Successfully');
       } catch (err) {
