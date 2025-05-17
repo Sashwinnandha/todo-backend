@@ -13,7 +13,7 @@ const server = http.createServer(app);
 
 const io = socketIo(server, {
   cors: {
-    origin: 'http://localhost:3000', // your React app
+    origin: process.env.CLIENT_ORIGIN || 'http://localhost:3000',
     methods: ['GET', 'POST'],
   },
 });
