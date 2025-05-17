@@ -24,35 +24,68 @@ const io = socketIo(server, {
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
 
-  socket.on('send_message', (data) => {
-    console.log('Message received:', data.text);
-    // Optionally store in MongoDB
-    io.emit('receive_message', data.text); // broadcast to all clients
-  });
+  // socket.on('send_message', (data) => {
+  //   console.log('Message received:', data.text);
+  //   // Optionally store in MongoDB
+  //   io.emit('receive_message', data.text); // broadcast to all clients
+  // });
 
-    socket.on('tasksemit', async () => {
+    socket.on('alltasks', async ({date}) => {
     try {
       const tasks = await tasksCollection.find().toArray();
-      console.log(tasks)
-      //const newTasks=tasks.filter((e)=>e.date===date)
-      io.emit("tasks",tasks)
+      const newTasks=tasks.filter((e)=>e.date===date)
+      io.emit("tasks",newTasks)
     } catch (err) {
       console.error('Error retrieving tasks:', err);
-      io.emit("Couldn't find the tasks")
+      io.emit("messages","Couldn't find all the tasks")
     }
 
-      socket.on('toggleEmit', async (body) => {
+        socket.on('newtask', async (body) => {
       try {
-        const { _id, status } = body;
+        const {text,completed,date} = body;
+        const newData={text,completed,date}
+        await tasksCollection.insertOne(newData);
+        const tasks = await tasksCollection.find().toArray();
+        const newTasks=tasks.filter((e)=>e.date===date)
+        io.emit("tasks",newTasks)
+        io.emit("messages","Added Successfully")
+      } catch (err) {
+        console.error('Error inserting task:', err);
+        io.emit("messages","Couldn't add the task")
+      }
+    });
+
+      socket.on('update', async (body) => {
+      try {
+        const { _id, status,date } = body;
 
         await tasksCollection.updateOne(
           { _id: new ObjectId(_id)},
           { $set: { completed: status } }
         );
         const tasks = await tasksCollection.find().toArray();
-        io.emit("tasks",tasks)
+        const newTasks=tasks.filter((e)=>e.date===date)
+        io.emit("tasks",newTasks)
       } catch (err) {
-        console.error('Error updating task status:', err);
+        console.error("messages",'Error updating task status:', err);
+        io.emit("messages","Couldn't update the selected task")
+      }
+    });
+
+    socket.on('delete', async (body) => {
+      try {
+        const { _id,date } = body;
+
+        await tasksCollection.deleteOne({ _id: new ObjectId(_id) });
+
+        const tasks = await tasksCollection.find().toArray();
+
+        const newTasks=tasks.filter((e)=>e.date===date)
+
+        io.emit("tasks",newTasks)
+      } catch (err) {
+        console.error('Error deleting task:', err);
+        io.emit("messages","Couldn't delete the selected task")
       }
     });
   });
@@ -112,16 +145,16 @@ connectToMongoDB()
     // });
 
     // POST new task
-    app.post('/newtask', async (req, res) => {
-      try {
-        const newTask = req.body;
-        const result = await tasksCollection.insertOne(newTask);
-        res.status(201).json({ ...newTask, _id: result.insertedId });
-      } catch (err) {
-        console.error('Error inserting task:', err);
-        res.status(500).json({ error: 'Failed to insert task' });
-      }
-    });
+    // app.post('/newtask', async (req, res) => {
+    //   try {
+    //     const newTask = req.body;
+    //     const result = await tasksCollection.insertOne(newTask);
+    //     res.status(201).json({ ...newTask, _id: result.insertedId });
+    //   } catch (err) {
+    //     console.error('Error inserting task:', err);
+    //     res.status(500).json({ error: 'Failed to insert task' });
+    //   }
+    // });
 
     // POST update task status
     // app.post('/task', async (req, res) => {
@@ -142,18 +175,18 @@ connectToMongoDB()
     // });
 
     // POST delete task by index
-    app.post('/taskid', async (req, res) => {
-      try {
-        const { _id } = req.body;
+    // app.post('/taskid', async (req, res) => {
+    //   try {
+    //     const { _id } = req.body;
 
-        await tasksCollection.deleteOne({ _id: new ObjectId(_id) });
+    //     await tasksCollection.deleteOne({ _id: new ObjectId(_id) });
 
-        res.status(201).json('Deleted Successfully');
-      } catch (err) {
-        console.error('Error deleting task:', err);
-        res.status(500).json({ error: 'Failed to delete task' });
-      }
-    });
+    //     res.status(201).json('Deleted Successfully');
+    //   } catch (err) {
+    //     console.error('Error deleting task:', err);
+    //     res.status(500).json({ error: 'Failed to delete task' });
+    //   }
+    // });
 
     // Start the server only after MongoDB is connected
     app.listen(PORT, () => {
