@@ -13,7 +13,7 @@ const server = http.createServer(app);
 
 const io = socketIo(server, {
   cors: {
-    origin:  process.env.CLIENT_ORIGIN || 'http://localhost:3000',
+    origin:   process.env.CLIENT_ORIGIN || 'http://localhost:3000',
     methods: ['GET', 'POST'],
   },
 });
@@ -40,15 +40,18 @@ io.on('connection', (socket) => {
       io.emit("messages","Couldn't find all the tasks")
     }
 
+  });
+
         socket.on('newtask', async (body) => {
       try {
         const {text,completed,date} = body;
+        console.log(text)
         const newData={text,completed,date}
         await tasksCollection.insertOne(newData);
         const tasks = await tasksCollection.find().toArray();
         const newTasks=tasks.filter((e)=>e.date===date)
-        io.emit("tasks",newTasks)
-        io.emit("messages","Added Successfully")
+        io.emit("tasksAdded",{data:newTasks,severity: 'success', summary: 'Success', detail:`${text} Added Successfully`})
+        // io.emit("messages",{ severity: 'success', summary: 'Success', detail:`${text} Added Successfully`})
       } catch (err) {
         console.error('Error inserting task:', err);
         io.emit("messages","Couldn't add the task")
@@ -88,7 +91,7 @@ io.on('connection', (socket) => {
         io.emit("messages","Couldn't delete the selected task")
       }
     });
-  });
+  
 
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
